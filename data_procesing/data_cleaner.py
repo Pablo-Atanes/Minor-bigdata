@@ -30,7 +30,7 @@ def load_data(filename="diabetes_binary_health_indicators_BRFSS2015.csv"):
 
 
 def clean_data(df):
-    """Clean the diabetes dataset for lifestyle-focused research questions.
+    """Clean the diabetes dataset for research questions.
 
     Steps:
       1. Drop duplicate rows
@@ -87,37 +87,42 @@ def clean_data(df):
 def get_data_for_questions(df):
     """Return a dict with a tailored DataFrame for each research question.
 
-    Q1: Diabetes prevalentie vs fysieke activiteit
-    Q2: Correlatie lifestyle factors met diabetes
-    Q3: K-means lifestyle clusters
-    Q4: Apriori association rules
-    Q5: Gecombineerde lifestyle factors en diabetes risico
+    Q1: Fruit consumptie & diabetes (Chi-square, logistische regressie)
+    Q2: Lifestyle patronen & diabetes (Apriori associatieregels)
+    Q3: Socio-economische status & diabetes (Multipele logistische regressie)
+    Q4: Cumulatief effect lifestyle factors (Polynomial logistische regressie)
+    Q5: Cholesterol + bloeddruk & diabetes (Interactie-effect)
     """
     questions = {}
 
-    # Q1 — PhysActivity vs Diabetes prevalentie
-    questions["q1_physical_activity"] = df[[TARGET, "PhysActivity"]].copy()
+    # Q1 — Fruit consumptie vs diabetes
+    questions["q1_fruit_diabetes"] = df[[TARGET, "Fruits"]].copy()
 
-    # Q2 — Alle lifestyle factors correlatie met diabetes
-    questions["q2_lifestyle_correlation"] = df[
-        [TARGET] + LIFESTYLE_FEATURES + CONTINUOUS_FEATURES
-    ].copy()
-
-    # Q3 — K-means clustering op lifestyle + BMI (no target needed for clustering)
-    questions["q3_kmeans_clusters"] = df[
-        LIFESTYLE_FEATURES + CONTINUOUS_FEATURES
-    ].copy()
-
-    # Q4 — Apriori association rules (all binary columns including target)
-    questions["q4_apriori"] = df[
+    # Q2 — Lifestyle patronen (apriori associatieregels)
+    questions["q2_lifestyle_patterns"] = df[
         [TARGET] + LIFESTYLE_FEATURES
     ].copy()
 
-    # Q5 — Combined lifestyle factors effect on diabetes risk
-    questions["q5_combined_risk"] = df[
-        [TARGET] + LIFESTYLE_FEATURES + CONTINUOUS_FEATURES
-        + ["HighBP", "HighChol", "GenHlth", "Age"]
+    # Q3 — Socio-economische status & diabetes
+    questions["q3_socioeconomic"] = df[
+        [TARGET, "Income", "Education"]
     ].copy()
+
+    # Q4 — Cumulatief effect lifestyle factors + afgeleide score
+    q4_cols = [TARGET, "Smoker", "PhysActivity", "Fruits", "HvyAlcoholConsump"]
+    q4 = df[q4_cols].copy()
+    q4["Unhealthy_Lifestyle_Score"] = (
+        q4["Smoker"]
+        + (1 - q4["PhysActivity"])
+        + (1 - q4["Fruits"])
+        + q4["HvyAlcoholConsump"]
+    )
+    questions["q4_cumulative_lifestyle"] = q4
+
+    # Q5 — Cholesterol + bloeddruk & diabetes (met interactieterm)
+    q5 = df[[TARGET, "HighBP", "HighChol"]].copy()
+    q5["HighBP_x_HighChol"] = q5["HighBP"] * q5["HighChol"]
+    questions["q5_cholesterol_bloodpressure"] = q5
 
     return questions
 
