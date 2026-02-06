@@ -1,3 +1,6 @@
 pandas
 openpyxl
 kagglehub
+matplotlib
+seaborn
+scipy
