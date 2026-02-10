@@ -4,16 +4,37 @@ import pandas as pd
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "questions")
 
-# Columns relevant to the research questions
 TARGET = "Diabetes_binary"
-LIFESTYLE_FEATURES = ["Smoker", "PhysActivity", "Fruits", "Veggies", "HvyAlcoholConsump"]
-CONTINUOUS_FEATURES = ["BMI"]
-BINARY_COLUMNS = LIFESTYLE_FEATURES + [
-    "HighBP", "HighChol", "CholCheck", "Stroke",
-    "HeartDiseaseorAttack", "AnyHealthcare", "NoDocbcCost",
-    "DiffWalk", "Sex",
-]
-ORDINAL_COLUMNS = ["GenHlth", "MentHlth", "PhysHlth", "Age", "Education", "Income"]
+
+# -- Validation rules per column (single source of truth) --
+
+COLUMN_RULES = {
+    # Binary columns: must be 0 or 1
+    "Diabetes_binary":      {"type": "binary"},
+    "Smoker":               {"type": "binary"},
+    "PhysActivity":         {"type": "binary"},
+    "Fruits":               {"type": "binary"},
+    "Veggies":              {"type": "binary"},
+    "HvyAlcoholConsump":    {"type": "binary"},
+    "HighBP":               {"type": "binary"},
+    "HighChol":             {"type": "binary"},
+    "CholCheck":            {"type": "binary"},
+    "Stroke":               {"type": "binary"},
+    "HeartDiseaseorAttack": {"type": "binary"},
+    "AnyHealthcare":        {"type": "binary"},
+    "NoDocbcCost":          {"type": "binary"},
+    "DiffWalk":             {"type": "binary"},
+    "Sex":                  {"type": "binary"},
+    # Ordinal columns: int within a range
+    "GenHlth":    {"type": "ordinal", "range": (1, 5)},
+    "Age":        {"type": "ordinal", "range": (1, 13)},
+    "Education":  {"type": "ordinal", "range": (1, 6)},
+    "Income":     {"type": "ordinal", "range": (1, 8)},
+    "MentHlth":   {"type": "ordinal", "range": (0, 30)},
+    "PhysHlth":   {"type": "ordinal", "range": (0, 30)},
+    # Continuous columns
+    "BMI":        {"type": "continuous", "range": (12, 98)},
+}
 
 
 def load_data(filename="diabetes_binary_health_indicators_BRFSS2015.csv"):
@@ -29,101 +50,129 @@ def load_data(filename="diabetes_binary_health_indicators_BRFSS2015.csv"):
     return df
 
 
-def clean_data(df):
-    """Clean the diabetes dataset for research questions.
+# -- Per-question derivation helpers --
+
+def _derive_q4(df):
+    """Add Unhealthy_Lifestyle_Score to Q4 data."""
+    df["Unhealthy_Lifestyle_Score"] = (
+        df["Smoker"]
+        + (1 - df["PhysActivity"])
+        + (1 - df["Fruits"])
+        + df["HvyAlcoholConsump"]
+    )
+    return df
+
+
+def _derive_q5(df):
+    """Add HighBP_x_HighChol interaction term to Q5 data."""
+    df["HighBP_x_HighChol"] = df["HighBP"] * df["HighChol"]
+    return df
+
+
+# -- Declarative question definitions --
+
+QUESTION_DEFINITIONS = [
+    {
+        "name": "q1_fruit_diabetes",
+        "columns": [TARGET, "Fruits"],
+        "post_process": None,
+    },
+    {
+        "name": "q2_lifestyle_patterns",
+        "columns": [TARGET, "Smoker", "PhysActivity", "Fruits", "Veggies", "HvyAlcoholConsump"],
+        "post_process": None,
+    },
+    {
+        "name": "q3_socioeconomic",
+        "columns": [TARGET, "Income", "Education"],
+        "post_process": None,
+    },
+    {
+        "name": "q4_cumulative_lifestyle",
+        "columns": [TARGET, "Smoker", "PhysActivity", "Fruits", "HvyAlcoholConsump"],
+        "post_process": _derive_q4,
+    },
+    {
+        "name": "q5_cholesterol_bloodpressure",
+        "columns": [TARGET, "HighBP", "HighChol"],
+        "post_process": _derive_q5,
+    },
+]
+
+
+# -- Core cleaning logic --
+
+def _clean_subset(df, columns):
+    """Clean a subset of the DataFrame, validating only the given columns.
 
     Steps:
-      1. Drop duplicate rows
-      2. Drop rows with missing values
-      3. Cast binary and ordinal columns to int
-      4. Validate value ranges
-      5. Filter BMI outliers
+      1. Select only the requested columns
+      2. Drop duplicate rows (within this subset)
+      3. Drop rows with any NaN (within this subset)
+      4. Cast types and validate ranges per column using COLUMN_RULES
     """
-    rows_before = len(df)
+    subset = df[columns].copy()
+    rows_before = len(subset)
 
-    # 1. Drop exact duplicate rows
-    df = df.drop_duplicates()
+    subset = subset.dropna()
 
-    # 2. Drop rows with any missing value
-    df = df.dropna()
+    for col in columns:
+        rule = COLUMN_RULES.get(col)
+        if rule is None:
+            continue
 
-    # 3. Cast types — binary/ordinal columns should be integers
-    for col in BINARY_COLUMNS + [TARGET]:
-        if col in df.columns:
-            df[col] = df[col].astype(int)
-    for col in ORDINAL_COLUMNS:
-        if col in df.columns:
-            df[col] = df[col].astype(int)
+        col_type = rule["type"]
 
-    # 4. Validate value ranges
-    # Binary columns must be 0 or 1
-    for col in BINARY_COLUMNS + [TARGET]:
-        if col in df.columns:
-            df = df[df[col].isin([0, 1])]
+        if col_type == "binary":
+            subset[col] = subset[col].astype(int)
+            subset = subset[subset[col].isin([0, 1])]
 
-    # Ordinal range checks
-    range_checks = {
-        "GenHlth": (1, 5),
-        "Age": (1, 13),
-        "Education": (1, 6),
-        "Income": (1, 8),
-        "MentHlth": (0, 30),
-        "PhysHlth": (0, 30),
-    }
-    for col, (low, high) in range_checks.items():
-        if col in df.columns:
-            df = df[(df[col] >= low) & (df[col] <= high)]
+        elif col_type == "ordinal":
+            subset[col] = subset[col].astype(int)
+            low, high = rule["range"]
+            subset = subset[(subset[col] >= low) & (subset[col] <= high)]
 
-    # 5. Filter BMI outliers (keep values within a plausible range)
-    if "BMI" in df.columns:
-        df = df[(df["BMI"] >= 12) & (df["BMI"] <= 98)]
+        elif col_type == "continuous":
+            low, high = rule["range"]
+            subset = subset[(subset[col] >= low) & (subset[col] <= high)]
 
-    rows_after = len(df)
-    print(f"Cleaning: {rows_before} -> {rows_after} rows ({rows_before - rows_after} removed)")
+    rows_after = len(subset)
+    print(f"  {rows_before} -> {rows_after} rijen ({rows_before - rows_after} verwijderd)")
 
-    return df.reset_index(drop=True)
+    return subset.reset_index(drop=True)
 
 
-def get_data_for_questions(df):
-    """Return a dict with a tailored DataFrame for each research question.
+# -- Public API --
 
-    Q1: Fruit consumptie & diabetes (Chi-square, logistische regressie)
-    Q2: Lifestyle patronen & diabetes (Apriori associatieregels)
-    Q3: Socio-economische status & diabetes (Multipele logistische regressie)
-    Q4: Cumulatief effect lifestyle factors (Polynomial logistische regressie)
-    Q5: Cholesterol + bloeddruk & diabetes (Interactie-effect)
+def load_and_clean_all(filename="diabetes_binary_health_indicators_BRFSS2015.csv"):
+    """Load data and return a cleaned DataFrame per research question.
+
+    Each question's data is cleaned independently: only the columns
+    relevant to that question are validated, so rows are never dropped
+    due to irrelevant columns.
+
+    Returns:
+        dict[str, pd.DataFrame]: {question_name: cleaned_dataframe}
     """
+    raw = load_data(filename)
+    rows_before = len(raw)
+    raw = raw.drop_duplicates()
+    print(f"Geladen: {rows_before} rijen, {len(raw.columns)} kolommen")
+    print(f"Na deduplicatie: {len(raw)} rijen ({rows_before - len(raw)} duplicaten verwijderd)\n")
+
     questions = {}
+    for qdef in QUESTION_DEFINITIONS:
+        name = qdef["name"]
+        print(f"{name}:")
 
-    # Q1 — Fruit consumptie vs diabetes
-    questions["q1_fruit_diabetes"] = df[[TARGET, "Fruits"]].copy()
+        cleaned = _clean_subset(raw, qdef["columns"])
 
-    # Q2 — Lifestyle patronen (apriori associatieregels)
-    questions["q2_lifestyle_patterns"] = df[
-        [TARGET] + LIFESTYLE_FEATURES
-    ].copy()
+        if qdef["post_process"] is not None:
+            cleaned = qdef["post_process"](cleaned)
 
-    # Q3 — Socio-economische status & diabetes
-    questions["q3_socioeconomic"] = df[
-        [TARGET, "Income", "Education"]
-    ].copy()
+        questions[name] = cleaned
 
-    # Q4 — Cumulatief effect lifestyle factors + afgeleide score
-    q4_cols = [TARGET, "Smoker", "PhysActivity", "Fruits", "HvyAlcoholConsump"]
-    q4 = df[q4_cols].copy()
-    q4["Unhealthy_Lifestyle_Score"] = (
-        q4["Smoker"]
-        + (1 - q4["PhysActivity"])
-        + (1 - q4["Fruits"])
-        + q4["HvyAlcoholConsump"]
-    )
-    questions["q4_cumulative_lifestyle"] = q4
-
-    # Q5 — Cholesterol + bloeddruk & diabetes (met interactieterm)
-    q5 = df[[TARGET, "HighBP", "HighChol"]].copy()
-    q5["HighBP_x_HighChol"] = q5["HighBP"] * q5["HighChol"]
-    questions["q5_cholesterol_bloodpressure"] = q5
-
+    print()
     return questions
 
 
@@ -134,11 +183,9 @@ def save_questions_to_json(questions, output_dir=OUTPUT_DIR):
     for name, data in questions.items():
         filepath = os.path.join(output_dir, f"{name}.json")
         data.to_json(filepath, orient="records", indent=2)
-        print(f"Saved {name}.json ({len(data)} rows, {len(data.columns)} columns)")
+        print(f"Saved {name}.json ({len(data)} rijen, {len(data.columns)} kolommen)")
 
 
 if __name__ == "__main__":
-    df = load_data()
-    df = clean_data(df)
-    questions = get_data_for_questions(df)
+    questions = load_and_clean_all()
     save_questions_to_json(questions)
