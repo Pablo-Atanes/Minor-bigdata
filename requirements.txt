@@ -4,3 +4,4 @@ kagglehub
 matplotlib
 seaborn
 scipy
+statsmodels
