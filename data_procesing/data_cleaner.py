@@ -103,20 +103,38 @@ QUESTION_DEFINITIONS = [
 
 # -- Core cleaning logic --
 
-def _clean_subset(df, columns):
+def _clean_subset(df, columns, report=False):
     """Clean a subset of the DataFrame, validating only the given columns.
+
+    When report=True the function also returns a DataFrame describing which
+    original rows were removed and for which reason.
 
     Steps:
       1. Select only the requested columns
-      2. Drop duplicate rows (within this subset)
-      3. Drop rows with any NaN (within this subset)
-      4. Cast types and validate ranges per column using COLUMN_RULES
+      2. Drop rows with any NaN (within this subset)
+      3. Validate values per column according to COLUMN_RULES
+      4. Cast types and return cleaned subset
     """
     subset = df[columns].copy()
+    # keep original index for reporting
+    subset["_orig_index"] = subset.index
     rows_before = len(subset)
 
-    subset = subset.dropna()
+    removal_logs = []
 
+    # 1) drop rows with any NaN (within this subset)
+    na_mask = subset.isna().any(axis=1)
+    if na_mask.any():
+        for _, row in subset[na_mask].iterrows():
+            removal_logs.append({
+                "orig_index": int(row["_orig_index"]),
+                "step": "dropna",
+                "column": None,
+                "value": None,
+            })
+        subset = subset[~na_mask]
+
+    # 2) per-column validation & casting (record removals)
     for col in columns:
         rule = COLUMN_RULES.get(col)
         if rule is None:
@@ -125,53 +143,91 @@ def _clean_subset(df, columns):
         col_type = rule["type"]
 
         if col_type == "binary":
-            # cast early to uint8 so later arithmetic/groupby works consistently
+            # record invalid binary values before casting
+            invalid_mask = ~subset[col].isin([0, 1])
+            if invalid_mask.any():
+                for _, row in subset[invalid_mask].iterrows():
+                    removal_logs.append({
+                        "orig_index": int(row["_orig_index"]),
+                        "step": "invalid_binary",
+                        "column": col,
+                        "value": row[col],
+                    })
+            subset = subset[~invalid_mask]
             subset[col] = subset[col].astype("uint8")
-            subset = subset[subset[col].isin([0, 1])]
 
         elif col_type == "ordinal":
-            subset[col] = subset[col].astype("uint8")
             low, high = rule["range"]
-            subset = subset[(subset[col] >= low) & (subset[col] <= high)]
+            out_mask = ~subset[col].between(low, high)
+            if out_mask.any():
+                for _, row in subset[out_mask].iterrows():
+                    removal_logs.append({
+                        "orig_index": int(row["_orig_index"]),
+                        "step": "out_of_range",
+                        "column": col,
+                        "value": row[col],
+                    })
+            subset = subset[~out_mask]
+            subset[col] = subset[col].astype("uint8")
 
         elif col_type == "continuous":
             low, high = rule["range"]
-            subset = subset[(subset[col] >= low) & (subset[col] <= high)]
-
-    # --- Optimize dtypes for memory & speed (step 4 improvement) ---
-    for col in columns:
-        rule = COLUMN_RULES.get(col)
-        if rule is None:
-            continue
-
-        # Keep target numeric for analyses (mean, regressions)
-        if col == TARGET:
-            subset[col] = subset[col].astype("uint8")
-        elif rule["type"] == "binary":
-            # keep binary columns numeric for arithmetic/aggregation (small uint8)
-            subset[col] = subset[col].astype("uint8")
-        elif rule["type"] == "ordinal":
-            subset[col] = subset[col].astype("uint8")
-        elif rule["type"] == "continuous":
+            out_mask = ~subset[col].between(low, high)
+            if out_mask.any():
+                for _, row in subset[out_mask].iterrows():
+                    removal_logs.append({
+                        "orig_index": int(row["_orig_index"]),
+                        "step": "out_of_range",
+                        "column": col,
+                        "value": row[col],
+                    })
+            subset = subset[~out_mask]
             subset[col] = subset[col].astype("float32")
+
+    # 3) drop duplicate rows inside the subset (if any)
+    if subset.duplicated().any():
+        dup_mask = subset.duplicated(keep="first")
+        for _, row in subset[dup_mask].iterrows():
+            removal_logs.append({
+                "orig_index": int(row["_orig_index"]),
+                "step": "duplicate_in_subset",
+                "column": None,
+                "value": None,
+            })
+        subset = subset.drop_duplicates(keep="first")
 
     rows_after = len(subset)
     print(f"  {rows_before} -> {rows_after} rijen ({rows_before - rows_after} verwijderd)")
 
+    # prepare report DataFrame if requested
+    report_df = None
+    if report:
+        report_df = pd.DataFrame(removal_logs)
+        if not report_df.empty:
+            report_df = report_df.sort_values(["step", "column"]).reset_index(drop=True)
+
+    # cleanup helper column and return
+    subset = subset.drop(columns=["_orig_index"]) if "_orig_index" in subset.columns else subset
+    if report:
+        return subset.reset_index(drop=True), report_df
     return subset.reset_index(drop=True)
 
 
 # -- Public API --
 
-def load_and_clean_all(filename="diabetes_binary_health_indicators_BRFSS2015.csv"):
+def load_and_clean_all(filename="diabetes_binary_health_indicators_BRFSS2015.csv", report=False):
     """Load data and return a cleaned DataFrame per research question.
 
     Each question's data is cleaned independently: only the columns
     relevant to that question are validated, so rows are never dropped
     due to irrelevant columns.
 
+    If report=True the function returns a tuple (questions, reports)
+    where `reports` is a dict mapping question_name -> DataFrame listing
+    removed rows and reasons.
+
     Returns:
-        dict[str, pd.DataFrame]: {question_name: cleaned_dataframe}
+        dict[str, pd.DataFrame] or (dict, dict): cleaned data per question
     """
     raw = load_data(filename)
     rows_before = len(raw)
@@ -180,11 +236,17 @@ def load_and_clean_all(filename="diabetes_binary_health_indicators_BRFSS2015.csv
     print(f"Na deduplicatie: {len(raw)} rijen ({rows_before - len(raw)} duplicaten verwijderd)\n")
 
     questions = {}
+    reports = {}
+
     for qdef in QUESTION_DEFINITIONS:
         name = qdef["name"]
         print(f"{name}:")
 
-        cleaned = _clean_subset(raw, qdef["columns"])
+        if report:
+            cleaned, report_df = _clean_subset(raw, qdef["columns"], report=True)
+            reports[name] = report_df
+        else:
+            cleaned = _clean_subset(raw, qdef["columns"], report=False)
 
         if qdef["post_process"] is not None:
             cleaned = qdef["post_process"](cleaned)
@@ -192,6 +254,8 @@ def load_and_clean_all(filename="diabetes_binary_health_indicators_BRFSS2015.csv
         questions[name] = cleaned
 
     print()
+    if report:
+        return questions, reports
     return questions
 
 
@@ -203,6 +267,20 @@ def save_questions_to_json(questions, output_dir=OUTPUT_DIR):
         filepath = os.path.join(output_dir, f"{name}.json")
         data.to_json(filepath, orient="records", indent=2)
         print(f"Saved {name}.json ({len(data)} rijen, {len(data.columns)} kolommen)")
+
+
+def save_cleaning_reports(reports, output_dir=OUTPUT_DIR):
+    """Save per-question cleaning reports (DataFrames) as CSV + JSON for review."""
+    os.makedirs(output_dir, exist_ok=True)
+    for name, rpt in reports.items():
+        if rpt is None or rpt.empty:
+            print(f"No removals for {name}")
+            continue
+        csv_path = os.path.join(output_dir, f"{name}_removals.csv")
+        json_path = os.path.join(output_dir, f"{name}_removals.json")
+        rpt.to_csv(csv_path, index=False)
+        rpt.to_json(json_path, orient="records", indent=2)
+        print(f"Saved cleaning report for {name}: {len(rpt)} removed rows")
 
 
 def compare_cleaning_strategies(filename="diabetes_binary_health_indicators_BRFSS2015.csv"):
