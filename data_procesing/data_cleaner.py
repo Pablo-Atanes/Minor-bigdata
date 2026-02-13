@@ -44,7 +44,8 @@ def load_data(filename="diabetes_binary_health_indicators_BRFSS2015.csv"):
 
     # Convert Diabetes_012 (3-class) to Diabetes_binary (0/1) if needed
     if "Diabetes_012" in df.columns and TARGET not in df.columns:
-        df[TARGET] = (df["Diabetes_012"] > 0).astype(int)
+        # keep target as small unsigned integer for downstream numeric ops
+        df[TARGET] = (df["Diabetes_012"] > 0).astype("uint8")
         df = df.drop(columns=["Diabetes_012"])
 
     return df
@@ -124,17 +125,35 @@ def _clean_subset(df, columns):
         col_type = rule["type"]
 
         if col_type == "binary":
-            subset[col] = subset[col].astype(int)
+            # cast early to uint8 so later arithmetic/groupby works consistently
+            subset[col] = subset[col].astype("uint8")
             subset = subset[subset[col].isin([0, 1])]
 
         elif col_type == "ordinal":
-            subset[col] = subset[col].astype(int)
+            subset[col] = subset[col].astype("uint8")
             low, high = rule["range"]
             subset = subset[(subset[col] >= low) & (subset[col] <= high)]
 
         elif col_type == "continuous":
             low, high = rule["range"]
             subset = subset[(subset[col] >= low) & (subset[col] <= high)]
+
+    # --- Optimize dtypes for memory & speed (step 4 improvement) ---
+    for col in columns:
+        rule = COLUMN_RULES.get(col)
+        if rule is None:
+            continue
+
+        # Keep target numeric for analyses (mean, regressions)
+        if col == TARGET:
+            subset[col] = subset[col].astype("uint8")
+        elif rule["type"] == "binary":
+            # keep binary columns numeric for arithmetic/aggregation (small uint8)
+            subset[col] = subset[col].astype("uint8")
+        elif rule["type"] == "ordinal":
+            subset[col] = subset[col].astype("uint8")
+        elif rule["type"] == "continuous":
+            subset[col] = subset[col].astype("float32")
 
     rows_after = len(subset)
     print(f"  {rows_before} -> {rows_after} rijen ({rows_before - rows_after} verwijderd)")
@@ -184,6 +203,56 @@ def save_questions_to_json(questions, output_dir=OUTPUT_DIR):
         filepath = os.path.join(output_dir, f"{name}.json")
         data.to_json(filepath, orient="records", indent=2)
         print(f"Saved {name}.json ({len(data)} rijen, {len(data.columns)} kolommen)")
+
+
+def compare_cleaning_strategies(filename="diabetes_binary_health_indicators_BRFSS2015.csv"):
+    """Compare per-question cleaning (current) vs global-clean-then-partition.
+
+    Prints row counts per question for both strategies and the memory usage
+    (approx) of the raw vs cleaned DataFrames.
+    """
+    raw = load_data(filename)
+    raw = raw.drop_duplicates()
+    print(f"Raw rows after dedup: {len(raw)}")
+
+    # A) current approach (per-question cleaning)
+    print("\nA) Per-question cleaning (current):")
+    questions = load_and_clean_all(filename)
+    for name, df in questions.items():
+        print(f"  {name}: {len(df)} rijen")
+
+    # B) global clean then partition
+    print("\nB) Global clean -> partition:")
+    # determine all relevant cols across questions
+    all_cols = sorted({c for q in QUESTION_DEFINITIONS for c in q["columns"]})
+    df_global = raw[all_cols].copy()
+    rows_before = len(df_global)
+    df_global = df_global.dropna()
+
+    for col in all_cols:
+        rule = COLUMN_RULES.get(col)
+        if rule is None:
+            continue
+        if rule["type"] == "binary":
+            df_global = df_global[df_global[col].isin([0, 1])]
+        elif rule["type"] == "ordinal":
+            low, high = rule["range"]
+            df_global = df_global[df_global[col].between(low, high)]
+        elif rule["type"] == "continuous":
+            low, high = rule["range"]
+            df_global = df_global[df_global[col].between(low, high)]
+
+    print(f"  global: {rows_before} -> {len(df_global)} rijen (removed {rows_before - len(df_global)})")
+    for qdef in QUESTION_DEFINITIONS:
+        subset = df_global[qdef["columns"]].dropna()
+        print(f"  {qdef['name']}: {len(subset)} rijen")
+
+    try:
+        print("\nMemory usage (approx):")
+        print(f"  raw memory (bytes): {raw.memory_usage(deep=True).sum()}")
+        print(f"  global-clean memory (bytes): {df_global.memory_usage(deep=True).sum()}")
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
