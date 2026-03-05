@@ -25,7 +25,9 @@ def _run_logistic(df, predictors, title):
     print(f"{'='*70}")
     print(f"  Type: {'Enkelvoudige' if len(predictors) == 1 else 'Meervoudige'} logistische regressie")
     print(f"  Observaties: {int(model.nobs):,}")
-    print(f"  Pseudo R-squared: {model.prsquared:.4f}")
+    prsq = model.prsquared
+    prsq_str = f"{prsq:.4f}" if np.isfinite(prsq) else "n.v.t. (kon niet berekend worden)"
+    print(f"  Pseudo R-squared: {prsq_str}")
     print(f"  Log-Likelihood: {model.llf:.1f}")
     print(f"  AIC: {model.aic:.1f}")
 
@@ -49,8 +51,13 @@ def _run_logistic(df, predictors, title):
         sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else "n.s."
 
         if p < 0.05:
-            richting = "verhoogt" if coef > 0 else "verlaagt"
-            print(f"  {pred}: {richting} de kans op diabetes (OR={odds:.3f}, p={p:.4f}) {sig}")
+            if "_x_" in pred:
+                # Interactieterm: OR < 1 = sub-additief (niet dat risico daalt)
+                interactie_type = "synergistisch (OR>1)" if coef > 0 else "sub-additief (OR<1, effect kleiner dan som van delen)"
+                print(f"  {pred}: significant interactie-effect ({interactie_type}, OR={odds:.3f}, p={p:.4f}) {sig}")
+            else:
+                richting = "verhoogt" if coef > 0 else "verlaagt"
+                print(f"  {pred}: {richting} de kans op diabetes (OR={odds:.3f}, p={p:.4f}) {sig}")
         else:
             print(f"  {pred}: geen significant effect (OR={odds:.3f}, p={p:.4f}) {sig}")
 
@@ -249,8 +256,10 @@ def regression_q5(q5):
             print("  de individuele effecten.")
         else:
             print(f"  De interactieterm is significant (p={p_inter:.4f}, OR={odds_inter:.3f}).")
-            print("  Het gecombineerde effect is kleiner dan verwacht op basis van de")
-            print("  individuele effecten (sub-additief).")
+            print("  Het gecombineerde effect is sub-additief: de combinatie van hoge bloeddruk")
+            print("  én hoog cholesterol verhoogt het diabetes risico MINDER dan de som van")
+            print("  de twee losse effecten. Beide factoren verhogen het risico wel degelijk,")
+            print("  maar ze versterken elkaar niet extra — de interactieterm corrigeert neerwaarts.")
     else:
         print(f"  De interactieterm is niet significant (p={p_inter:.4f}, OR={odds_inter:.3f}).")
         print("  Er is geen bewijs voor een synergistisch effect. De effecten van hoge")
