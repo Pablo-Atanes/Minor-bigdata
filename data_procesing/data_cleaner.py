@@ -212,8 +212,24 @@ def _clean_subset(df, columns, report=False):
         return subset.reset_index(drop=True), report_df
     return subset.reset_index(drop=True)
 
-
 # -- Public API --
+
+def get_duplicates(filename="diabetes_binary_health_indicators_BRFSS2015.csv"):
+    """Geeft de duplicaat-rijen uit de ruwe dataset terug.
+
+    Returns:
+        tuple: (duplicates_df, n_unique_removed)
+            - duplicates_df: alle rijen die minstens één keer voorkomen als duplicaat
+              (inclusief de eerste keer, gegroepeerd zodat je koppels ziet)
+            - n_unique_removed: aantal rijen dat daadwerkelijk verwijderd wordt
+              (= aantal duplicaten minus de 'eerste' instantie die bewaard wordt)
+    """
+    raw = load_data(filename)
+    dup_mask = raw.duplicated(keep=False)   # True voor alle rijen die een duplicaat hebben
+    duplicates_df = raw[dup_mask].sort_values(list(raw.columns)).reset_index(drop=True)
+    n_unique_removed = raw.duplicated(keep="first").sum()
+    return duplicates_df, int(n_unique_removed)
+
 
 def load_and_clean_all(filename="diabetes_binary_health_indicators_BRFSS2015.csv", report=False):
     """Load data and return a cleaned DataFrame per research question.

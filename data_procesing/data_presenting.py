@@ -81,16 +81,43 @@ def plot_horizontal_comparison(df, columns, title=None):
 
 
 def plot_scatter_colored(df, x_col, y_col, title=None):
-    """Scatter plot (x/y-diagram) gekleurd op diabetes status."""
-    fig, ax = plt.subplots(figsize=(7, 5))
-    for label, color, name in [(0, "#4a90d9", "Geen diabetes"), (1, "#d94a4a", "Diabetes")]:
-        subset = df[df["Diabetes_binary"] == label]
-        ax.scatter(subset[x_col], subset[y_col], c=color, label=name,
-                   alpha=0.3, s=10, edgecolors="none")
+    """Bubble chart (x/y-diagram) gekleurd op diabetes percentage.
+
+    Punten worden geaggregeerd per (x, y)-combinatie; de puntgrootte
+    is proportioneel aan het aantal respondenten in die cel.
+    """
+    fig, ax = plt.subplots(figsize=(8, 6))
+    grp = (
+        df.groupby([x_col, y_col])
+        .agg(count=("Diabetes_binary", "count"),
+             diabetes_pct=("Diabetes_binary", "mean"))
+        .reset_index()
+    )
+    max_count = grp["count"].max()
+    grp["s"] = (grp["count"] / max_count) * 3000 + 300
+
+    sc = ax.scatter(
+        grp[x_col], grp[y_col],
+        s=grp["s"],
+        c=grp["diabetes_pct"],
+        cmap="RdYlGn_r",
+        alpha=0.85,
+        edgecolors="black",
+        linewidths=0.5,
+    )
+    cbar = plt.colorbar(sc, ax=ax)
+    cbar.set_label("Diabetes percentage")
+    cbar.ax.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _: f"{v*100:.0f}%")
+    )
     ax.set_xlabel(x_col)
     ax.set_ylabel(y_col)
     ax.set_title(title or f"{x_col} vs {y_col}")
-    ax.legend()
+    for pct in [25, 50, 100]:
+        s = (pct / 100) * 3000 + 300
+        ax.scatter([], [], s=s, c="gray", alpha=0.6, edgecolors="black",
+                   label=f"n ≈ {int(pct / 100 * max_count):,}")
+    ax.legend(title="Aantal respondenten", loc="upper left", fontsize=8)
     plt.tight_layout()
     plt.show()
 
