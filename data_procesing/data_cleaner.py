@@ -33,7 +33,7 @@ COLUMN_RULES = {
     "MentHlth":   {"type": "ordinal", "range": (0, 30)},
     "PhysHlth":   {"type": "ordinal", "range": (0, 30)},
     # Continuous columns
-    "BMI":        {"type": "continuous", "range": (12, 98)},
+    "BMI":        {"type": "ordinal", "range": (12, 98)},
 }
 
 
@@ -97,6 +97,16 @@ QUESTION_DEFINITIONS = [
         "name": "q5_cholesterol_bloodpressure",
         "columns": [TARGET, "HighBP", "HighChol"],
         "post_process": _derive_q5,
+    },
+    {
+        "name": "full_set",
+        "columns": [TARGET, "Smoker", "PhysActivity", "Fruits", "Veggies", 
+    "HvyAlcoholConsump", "HighBP", "HighChol", "CholCheck", "Stroke", 
+    "HeartDiseaseorAttack", "AnyHealthcare", "NoDocbcCost", "DiffWalk", 
+    "Sex", "GenHlth", "Age", "Education", "Income", "MentHlth", 
+    "PhysHlth", "BMI"
+],
+        "post_process": None,
     },
 ]
 
