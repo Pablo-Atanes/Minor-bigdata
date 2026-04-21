@@ -1,7 +1,8 @@
 """
 Macro Economische Data Fetcher
 ==============================
-Haalt de volgende indicatoren op en schrijft ze weg als JSON:
+Haalt de volgende indicatoren op en schrijft ze weg als JSON.
+De data wordt direct gecleaned (NaNs naar null, ffill, Kalender-correcties naar dagelijks, en diffs berekend).
 
 Via FRED API:
   - Nederlandse inflatie (CPI)       → NLCPIALLMINMEI.json
@@ -10,49 +11,28 @@ Via FRED API:
   - ECB beleidsrente                 → ECBDFR.json
   - Eurozone inflatie (HICP)         → CP0000EZ19M086NEST.json
 
-Via CBS Open Data (optioneel):
+Via CBS Open Data:
   - Nederlandse inflatie             → CBS_70936ned.json
   - Nederlandse werkloosheid         → CBS_85224NED.json
-
-JSON formaat per bestand:
-  {
-    "ticker": "NLCPIALLMINMEI",
-    "label": "NL Inflatie (CPI, %)",
-    "source": "FRED",
-    "last_updated": "2024-04-14",
-    "data": [
-      { "date": "2024-01-01", "value": 2.9 },
-      ...
-    ]
-  }
-
-Bestandsnamen volgen de conventie:
-  safe_ticker_name = ticker_symbol.replace('^', '').replace('=', '_')
-  output_file = os.path.join(output_dir, f"{safe_ticker_name}.json")
-
-Installatie (eenmalig):
-  pip install fredapi cbsodata pandas
-
-FRED API key aanvragen (gratis):
-  https://fred.stlouisfed.org/docs/api/api_key.html
 """
 
 import os
 import json
 import pandas as pd
+import numpy as np
 from datetime import datetime
 
 # ─────────────────────────────────────────────
 # CONFIGURATIE
 # ─────────────────────────────────────────────
 
-FRED_API_KEY = "604abac43bf3e914ca41274770801929"     # Aanvragen op: fred.stlouisfed.org
+FRED_API_KEY = "604abac43bf3e914ca41274770801929"     
 
-START_DATE   = "2000-01-01"            # Hoe ver terug je wilt
-END_DATE     = datetime.today().strftime("%Y-%m-%d")  # Tot vandaag
+START_DATE   = "2010-01-01"  # Zorg dat alles minimaal vanaf 2010 begint voor ffill        
+END_DATE     = datetime.today().strftime("%Y-%m-%d")
 
-OUTPUT_DIR   = "./macro_data"          # Map waar de JSON-bestanden komen
-
+SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR   = os.path.join(SCRIPT_DIR, "ticker_data", "macro_data")
 
 # ─────────────────────────────────────────────
 # FRED INDICATOREN — ticker_symbol → label
@@ -63,223 +43,166 @@ FRED_INDICATOREN = {
     "CP0000EZ19M086NEST": "Eurozone Inflatie HICP (%)",
 }
 
-
 # ─────────────────────────────────────────────
-# CBS INDICATOREN — tabel_id → label
+# CBS INDICATOREN — tabel_id → (label, value_col)
 # ─────────────────────────────────────────────
 
 CBS_INDICATOREN = {
-    "70936ned": "NL CPI (CBS)",
-    "85224NED": "NL Werkloosheid (CBS)",
-    "83131NED": "NL Inflatie (CBS)"
+    "70936ned": {"label": "NL CPI (CBS)", "value_col": "JaarmutatieCPI_1"},
+    "85224NED": {"label": "NL Werkloosheid (CBS)", "value_col": "Werkloosheidspercentage_25"},
+    "83131NED": {"label": "NL Inflatie (CBS)", "value_col": "CPI_1"}
 }
 
-
-# ─────────────────────────────────────────────
-# BESTANDSNAAM HELPER
-# ─────────────────────────────────────────────
-
-def maak_bestandsnaam(ticker_symbol: str, output_dir: str) -> str:
-    """
-    Zet een ticker symbool om naar een veilige bestandsnaam.
-    Zelfde conventie als Yahoo Finance tickers:
-      ^ wordt verwijderd
-      = wordt _
-    """
-    safe_ticker_name = ticker_symbol.replace('^', '').replace('=', '_')
-    output_file = os.path.join(output_dir, f"{safe_ticker_name}.json")
-    return output_file
-
-
-# ─────────────────────────────────────────────
-# JSON SCHRIJVEN
-# ─────────────────────────────────────────────
-
-def schrijf_naar_json(
-    ticker_symbol: str,
-    label: str,
-    source: str,
-    series: pd.Series,
-    output_dir: str
-) -> str:
-    """
-    Schrijft een Pandas Series weg als JSON bestand.
-
-    Output structuur:
-    {
-        "ticker": "NLCPIALLMINMEI",
-        "label": "NL Inflatie (CPI, %)",
-        "source": "FRED",
-        "last_updated": "2024-04-14",
-        "data": [
-            { "date": "2024-01-01", "value": 2.9 },
-            ...
-        ]
+def parse_cbs_period(period_str):
+    if pd.isna(period_str):
+        return pd.NaT
+    
+    period_str = str(period_str).strip()
+    
+    # 2013 1e kwartaal
+    if "kwartaal" in period_str:
+        year = period_str[:4]
+        kw = period_str.split(" ")[1][:1] # 1, 2, 3, 4
+        month = (int(kw) - 1) * 3 + 1
+        return pd.to_datetime(f"{year}-{month:02d}-01")
+        
+    # 2024 januari 
+    dutch_months = {
+        "januari": "01", "februari": "02", "maart": "03", "april": "04",
+        "mei": "05", "juni": "06", "juli": "07", "augustus": "08",
+        "september": "09", "oktober": "10", "november": "11", "december": "12"
     }
-    """
-    os.makedirs(output_dir, exist_ok=True)
+    
+    parts = period_str.split(" ")
+    if len(parts) == 2:
+        year = parts[0]
+        month = dutch_months.get(parts[1].lower())
+        if month:
+            return pd.to_datetime(f"{year}-{month}-01")
+            
+    # Alleen een jaar (bijv. "2024") negeren of als januari pakken.
+    # Data is vaak maandelijks en jaarlijks gelijktijdig, we filteren jaarlijkse eruit.
+    return pd.NaT
 
-    # Bouw data lijst op — NaN waarden overslaan
-    data_lijst = [
-        {
-            "date":  datum.strftime("%Y-%m-%d"),
-            "value": round(float(waarde), 6)
-        }
-        for datum, waarde in series.items()
-        if pd.notna(waarde)
-    ]
+def clean_and_reindex(df, value_col):
+    # Maak dagelijkse kalender 
+    daily_idx = pd.date_range(start=max(pd.to_datetime(START_DATE), df.index.min()), 
+                              end=min(pd.to_datetime(END_DATE), df.index.max()), 
+                              freq='D')
+    
+    df = df.reindex(daily_idx)
+    df.index.name = "date"
+    
+    # Forward filling up tot end of month/quarter
+    df[value_col] = df[value_col].ffill()
+    df[value_col] = df[value_col].bfill() # Voor de allereerste nans
+    
+    # Stationarity
+    df['value_diff'] = df[value_col].diff().fillna(0)
+    
+    # Afronden op 4 decimalen en NaN naar None
+    df = df.round(4)
+    df.replace({np.nan: None}, inplace=True)
+    
+    # Terug naar een list of dicts met "date", "value", "value_diff"
+    result = []
+    for date, row in df.iterrows():
+        result.append({
+            "date": date.strftime("%Y-%m-%d"),
+            "value": row[value_col],
+            "value_diff": row["value_diff"]
+        })
+    return result
 
-    # Sorteer op datum oplopend (oudste eerst)
-    data_lijst.sort(key=lambda x: x["date"])
-
-    payload = {
-        "ticker":       ticker_symbol,
-        "label":        label,
-        "source":       source,
-        "last_updated": datetime.today().strftime("%Y-%m-%d"),
-        "data":         data_lijst
-    }
-
-    output_file = maak_bestandsnaam(ticker_symbol, output_dir)
-
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, ensure_ascii=False)
-
-    print(f"   💾 Weggeschreven: {output_file} ({len(data_lijst)} datapunten)")
-    return output_file
-
-
-# ─────────────────────────────────────────────
-# DATA OPHALEN VIA FRED
-# ─────────────────────────────────────────────
 
 def haal_fred_data_op(output_dir: str):
-    """
-    Haalt alle FRED macro-indicatoren op en schrijft
-    elk als apart JSON bestand weg naar output_dir.
-    """
-    try:
-        from fredapi import Fred
-    except ImportError:
-        print("❌ fredapi niet geïnstalleerd. Voer uit: pip install fredapi")
-        return
-
+    from fredapi import Fred
     fred = Fred(api_key=FRED_API_KEY)
 
-    print(f"\n📡 FRED — {len(FRED_INDICATOREN)} indicatoren ophalen...")
+    print(f"\\n📡 FRED — {len(FRED_INDICATOREN)} indicatoren ophalen en cleanen...")
 
     for ticker_symbol, label in FRED_INDICATOREN.items():
         try:
-            print(f"\n📥 {label} ({ticker_symbol})")
+            print(f"\\n📥 {label} ({ticker_symbol})")
+            series = fred.get_series(ticker_symbol, observation_start=START_DATE, observation_end=END_DATE)
+            df = series.to_frame(name="value")
+            df.index.name = "date"
+            df.index = pd.to_datetime(df.index)
+            
+            # Kalender en NaNs
+            data_lijst = clean_and_reindex(df, "value")
 
-            series = fred.get_series(
-                ticker_symbol,
-                observation_start=START_DATE,
-                observation_end=END_DATE
-            )
+            payload = {
+                "ticker": ticker_symbol,
+                "label": label,
+                "source": "FRED",
+                "last_updated": datetime.today().strftime("%Y-%m-%d"),
+                "data": data_lijst
+            }
 
-            print(f"   ✅ {len(series)} datapunten "
-                  f"({series.index.min().date()} → {series.index.max().date()})")
-
-            schrijf_naar_json(
-                ticker_symbol=ticker_symbol,
-                label=label,
-                source="FRED",
-                series=series,
-                output_dir=output_dir
-            )
+            output_file = os.path.join(output_dir, f"{ticker_symbol}.json")
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2, ensure_ascii=False)
+            
+            print(f"   ✅ Succesvol weggeschreven (gecleaned): {output_file}")
 
         except Exception as e:
             print(f"   ❌ Fout bij ophalen {ticker_symbol}: {e}")
 
 
-# ─────────────────────────────────────────────
-# DATA OPHALEN VIA CBS (optioneel)
-# ─────────────────────────────────────────────
-
 def haal_cbs_data_op(output_dir: str):
-    """
-    Haalt Nederlandse macro-data op via CBS Open Data.
-    Geen API key nodig — directe publieke bron.
-    Schrijft elk als apart JSON bestand weg naar output_dir.
-    """
-    try:
-        import cbsodata
-    except ImportError:
-        print("❌ cbsodata niet geïnstalleerd. Voer uit: pip install cbsodata")
-        return
+    import cbsodata
+    print(f"\\n📡 CBS — {len(CBS_INDICATOREN)} indicatoren ophalen en cleanen...")
 
-    print(f"\n📡 CBS — {len(CBS_INDICATOREN)} indicatoren ophalen...")
-
-    for tabel_id, label in CBS_INDICATOREN.items():
+    for tabel_id, meta in CBS_INDICATOREN.items():
         try:
-            print(f"\n📥 {label} ({tabel_id})")
+            label = meta['label']
+            val_col = meta['value_col']
+            print(f"\\n📥 {label} ({tabel_id}) | Value column: {val_col}")
 
             raw = cbsodata.get_data(tabel_id)
-            df  = pd.DataFrame(raw)
+            df = pd.DataFrame(raw)
+            
+            if 'Perioden' not in df.columns or val_col not in df.columns:
+                print(f"   ❌ Data mist de vereiste kolommen.")
+                continue
+                
+            df['date'] = df['Perioden'].apply(parse_cbs_period)
+            
+            # Verwijder non-dates (bijv hele jaren) en NaN values in target
+            df = df.dropna(subset=['date'])
+            # Als er duplicates zijn op datum (soms heeft CBS dat), pak de eerste
+            df = df.drop_duplicates(subset=['date'])
+            df.set_index('date', inplace=True)
+            df.sort_index(inplace=True)
+            
+            # Selecteer  alleen de value column
+            df = df[[val_col]]
+            
+            data_lijst = clean_and_reindex(df, val_col)
 
-            print(f"   ✅ {len(df)} rijen opgehaald")
-            print(f"   Kolommen: {list(df.columns)}")
-
-            os.makedirs(output_dir, exist_ok=True)
-
-            # CBS ticker volgt dezelfde naamconventie
             cbs_ticker  = f"CBS_{tabel_id}"
-            safe_name   = cbs_ticker.replace('^', '').replace('=', '_')
-            output_file = os.path.join(output_dir, f"{safe_name}.json")
+            output_file = os.path.join(output_dir, f"{cbs_ticker}.json")
 
             payload = {
-                "ticker":       cbs_ticker,
-                "label":        label,
-                "source":       "CBS",
+                "ticker": cbs_ticker,
+                "label": label,
+                "source": "CBS",
                 "last_updated": datetime.today().strftime("%Y-%m-%d"),
-                "data":         df.to_dict(orient="records")
+                "data": data_lijst
             }
 
             with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
+                json.dump(payload, f, indent=2, ensure_ascii=False)
 
-            print(f"   💾 Weggeschreven: {output_file}")
+            print(f"   ✅ Succesvol weggeschreven (gecleaned): {output_file}")
 
         except Exception as e:
             print(f"   ❌ Fout bij ophalen {tabel_id}: {e}")
 
 
-# ─────────────────────────────────────────────
-# HOOFDPROGRAMMA
-# ─────────────────────────────────────────────
-
 if __name__ == "__main__":
-
-    print("=" * 55)
-    print("  Macro Economische Data Fetcher")
-    print("=" * 55)
-    print(f"  Periode:    {START_DATE} → {END_DATE}")
-    print(f"  Output map: {OUTPUT_DIR}")
-    print("=" * 55)
-
-    # Controleer API key
-    if FRED_API_KEY == "JOUW_API_KEY_HIER":
-        print("\n⚠️  Vul eerst je FRED API key in bovenaan het script.")
-        print("   Gratis aanvragen op: https://fred.stlouisfed.org/docs/api/api_key.html\n")
-        exit(1)
-
-    # FRED data ophalen en wegschrijven als JSON
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     haal_fred_data_op(OUTPUT_DIR)
     haal_cbs_data_op(OUTPUT_DIR)
-    # CBS data ophalen en wegschrijven als JSON (optioneel)
-    # Verwijder het commentaar hieronder om CBS data ook op te halen:
-    # haal_cbs_data_op(OUTPUT_DIR)
-
-    print("\n" + "=" * 55)
-    print("  ✅ Klaar! Bestanden staan in:", OUTPUT_DIR)
-    print("=" * 55)
-
-    # Overzicht van gegenereerde bestanden
-    if os.path.exists(OUTPUT_DIR):
-        bestanden = [f for f in os.listdir(OUTPUT_DIR) if f.endswith(".json")]
-        print(f"\n  📁 {len(bestanden)} JSON bestand(en) aangemaakt:")
-        for b in sorted(bestanden):
-            pad     = os.path.join(OUTPUT_DIR, b)
-            grootte = os.path.getsize(pad)
-            print(f"     • {b} ({grootte:,} bytes)")
+    print("\\nKlaar met het Macro DataFrame generatieproces.")
