@@ -1,3 +1,8 @@
+# Portfolio
+
+### de samenstelling
+Dit portfolio is samengesteld zodat wij data hebben van veel verschillende markten en typen grondstoffen. Op deze manier kunnen wij kijken of er verbanden liggen tussen deze verschillende markten. Daarnaast kunnen wij onderzoeken welke markten het sterkst reageren op veranderingen in bijvoorbeeld het rentebeleid van de ECB of de inflatie.
+
 ### aandelen, crypto en obligaties
 - LVMH (MC.PA): https://finance.yahoo.com/quote/MC.PA
 - Berkshire Hathaway (BRK-B): https://finance.yahoo.com/quote/BRK-B
@@ -11,7 +16,6 @@
 - Bitcoin (BTC-USD): https://finance.yahoo.com/quote/BTC-USD
 - Ethereum (ETH-USD): https://finance.yahoo.com/quote/ETH-USD
 - Solana (SOL-USD): https://finance.yahoo.com/quote/SOL-USD
-
 
 ### macro-economische indicatoren
 FRED_INDICATOREN = {

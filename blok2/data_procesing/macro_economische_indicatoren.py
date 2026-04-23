@@ -85,17 +85,14 @@ def parse_cbs_period(period_str):
     return pd.NaT
 
 def clean_and_reindex(df, value_col):
-    # Maak dagelijkse kalender 
-    daily_idx = pd.date_range(start=max(pd.to_datetime(START_DATE), df.index.min()), 
-                              end=min(pd.to_datetime(END_DATE), df.index.max()), 
-                              freq='D')
+    # Converteer alles naar de 1e van de maand en pak de eerste beschikbare waarde
+    df = df.resample('MS').first()
     
-    df = df.reindex(daily_idx)
+    # Resample kan maanden toevoegen waar geen data voor is (als er gaten zijn), dus drop NaNs
+    df.dropna(subset=[value_col], inplace=True)
+    
     df.index.name = "date"
-    
-    # Forward filling up tot end of month/quarter
-    df[value_col] = df[value_col].ffill()
-    df[value_col] = df[value_col].bfill() # Voor de allereerste nans
+    df.sort_index(inplace=True)
     
     # Stationarity
     df['value_diff'] = df[value_col].diff().fillna(0)
