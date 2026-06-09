@@ -11,3 +11,4 @@ yfinance
 fredapi
 cbsodata
 jinja2
+vaderSentiment>=3.3.2

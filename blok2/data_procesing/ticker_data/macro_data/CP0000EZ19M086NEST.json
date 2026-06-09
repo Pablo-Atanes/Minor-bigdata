@@ -2,7 +2,7 @@
   "ticker": "CP0000EZ19M086NEST",
   "label": "Eurozone Inflatie HICP (%)",
   "source": "FRED",
-  "last_updated": "2026-05-06",
+  "last_updated": "2026-06-09",
   "data": [
     {
       "date": "2010-01-01",
@@ -978,6 +978,11 @@
       "date": "2026-03-01",
       "value": 101.98,
       "value_diff": 1.28
+    },
+    {
+      "date": "2026-04-01",
+      "value": 103.02,
+      "value_diff": 1.04
     }
   ]
 }

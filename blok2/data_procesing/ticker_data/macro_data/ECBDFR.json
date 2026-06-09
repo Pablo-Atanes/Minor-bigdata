@@ -2,7 +2,7 @@
   "ticker": "ECBDFR",
   "label": "ECB Beleidsrente (%)",
   "source": "FRED",
-  "last_updated": "2026-05-06",
+  "last_updated": "2026-06-09",
   "data": [
     {
       "date": "2010-01-01",
@@ -986,6 +986,11 @@
     },
     {
       "date": "2026-05-01",
+      "value": 2.0,
+      "value_diff": 0.0
+    },
+    {
+      "date": "2026-06-01",
       "value": 2.0,
       "value_diff": 0.0
     }

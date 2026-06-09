@@ -1,0 +1,25 @@
+id,date,source,title,compound,pos,neu,neg,label
+lvmh_001,2025-04-14,Reuters,LVMH posts surprise drop in first-quarter sales as luxury demand weakens,-0.5106,0.137,0.664,0.199,negatief
+lvmh_002,2025-04-15,Bloomberg,LVMH shares tumble after weak quarterly update spooks luxury investors,0.0258,0.096,0.81,0.094,neutraal
+lvmh_003,2025-04-22,Financial Times,Slowing Chinese demand weighs on LVMH's growth outlook,-0.5984,0.055,0.786,0.159,negatief
+lvmh_004,2025-05-08,Yahoo Finance,LVMH jewellery business shows resilience despite broader luxury slump,0.4939,0.161,0.72,0.119,positief
+lvmh_005,2025-05-21,Reuters,"ECB signals prolonged restrictive stance, pressuring European luxury stocks",-0.6705,0.0,0.86,0.14,negatief
+lvmh_006,2025-06-05,Bloomberg,LVMH steps up cost discipline as margins come under pressure,0.5106,0.126,0.824,0.05,positief
+lvmh_007,2025-06-18,CNBC,Louis Vuitton launches new menswear collection to strong critical reception,0.8481,0.305,0.536,0.159,positief
+lvmh_008,2025-07-09,Financial Times,LVMH first-half profit falls as luxury demand stays subdued,0.5141,0.189,0.688,0.123,positief
+lvmh_009,2025-07-25,Reuters,Japanese tourism demand offers modest boost to LVMH sales,0.25,0.156,0.706,0.137,positief
+lvmh_010,2025-08-12,Bloomberg,"Analysts cut luxury sector forecasts, LVMH among most affected",-0.6997,0.0,0.841,0.159,negatief
+lvmh_011,2025-09-04,Yahoo Finance,Sephora outperforms within LVMH portfolio as beauty stays resilient,0.9245,0.325,0.675,0.0,positief
+lvmh_012,2025-09-18,Reuters,"ECB holds rates again as inflation lingers, luxury stocks edge lower",0.101,0.102,0.803,0.094,positief
+lvmh_013,2025-10-08,Financial Times,"LVMH third-quarter sales miss expectations, shares slide",-0.4877,0.142,0.651,0.207,negatief
+lvmh_014,2025-10-22,Bloomberg,Dior names new creative director in bid to refresh brand momentum,0.8957,0.232,0.768,0.0,positief
+lvmh_015,2025-11-06,CNBC,LVMH announces new share buyback program to support stock,0.9325,0.327,0.673,0.0,positief
+lvmh_016,2025-11-20,Reuters,European luxury sales decline broadens as macro pressures mount,0.0183,0.136,0.707,0.157,neutraal
+lvmh_017,2025-12-04,Bloomberg,Soft US holiday shopping season weighs on LVMH outlook,0.6705,0.162,0.788,0.051,positief
+lvmh_018,2025-12-15,Yahoo Finance,Luxury stocks rebound on hopes of ECB rate cuts in early 2026,0.25,0.14,0.738,0.122,positief
+lvmh_019,2026-01-09,Reuters,Dutch prosecutors fine Louis Vuitton Netherlands over anti-money-laundering failures,-0.743,0.096,0.713,0.191,negatief
+lvmh_020,2026-01-22,Financial Times,LVMH full-year profit drops sharply in toughest year in over a decade,0.0258,0.106,0.771,0.123,neutraal
+lvmh_021,2026-02-04,Bloomberg,LVMH agrees to sell Marc Jacobs to WHP Global and G-III for 850 million dollars,-0.0772,0.055,0.901,0.043,negatief
+lvmh_022,2026-02-10,Reuters,Arnault outlines disciplined strategy as LVMH navigates luxury downturn,0.743,0.167,0.803,0.03,positief
+lvmh_023,2026-02-18,CNBC,"ECB hints at first rate cut, lifting LVMH and European luxury stocks",0.2023,0.101,0.793,0.105,positief
+lvmh_024,2026-02-26,Yahoo Finance,Analysts see cautious recovery path for LVMH as rate cycle turns,0.7783,0.17,0.769,0.061,positief
